@@ -1,42 +1,69 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { motion, useMotionValue, useTransform, AnimatePresence } from "framer-motion"
 import { Check, X } from "lucide-react"
+import { Button, Modal } from 'antd';
 
 // Sample flashcard data
-const flashcards = [
-  {
-    id: 1,
-    question: "What is the capital of France?",
-    answer: "Paris",
-  },
-  {
-    id: 2,
-    question: "What is the largest planet in our solar system?",
-    answer: "Jupiter",
-  },
-  {
-    id: 3,
-    question: "What is the chemical symbol for gold?",
-    answer: "Au",
-  },
-  {
-    id: 4,
-    question: "Who wrote 'Romeo and Juliet'?",
-    answer: "William Shakespeare",
-  },
-  {
-    id: 5,
-    question: "What is the square root of 144?",
-    answer: "12",
-  },
-]
+
+interface Flashcard {
+    id: string
+    question: string
+    answer: string
+}
 
 export function FlashcardDeck() {
+
+    const [isModalOpen, setIsModalOpen] = useState(false);
+
+  const showModal = () => {
+    setIsModalOpen(true);
+  };
+
+  const handleOk = () => {
+    setIsModalOpen(false);
+  };
+
+  const handleCancel = () => {
+    setIsModalOpen(false);
+  };
+
+
+    const [flashcards, setFlashcards] = useState<Flashcard[]>([])
   const [currentIndex, setCurrentIndex] = useState(0)
   const [flipped, setFlipped] = useState<Record<number, boolean>>({})
   const [swipeStates, setSwipeStates] = useState<Record<number, "left" | "right" | null>>({})
+    const [topic, setTopic] = useState("")
+
+  const getQuestionsFromAI = async (topic : string) => {
+        try{
+            const response = await fetch("/api/getQuestions", {
+                method : "POST",
+                headers:{
+                    "Content-Type": "application/json",
+                },
+                body : JSON.stringify({topic})
+            })
+
+            const data = await response.json()
+            console.log("Data from AI:", data)
+
+            if(data.success){
+                const flashcards = data.data.map((item : any) => ({
+                    id: item.id,
+                    question: item.question,
+                    answer: item.answer,
+                }))
+                setFlashcards(flashcards)
+                
+            }else{
+                console.error("Error fetching questions from AI:", data.message)
+            }
+        }catch(e){
+            console.error("Error fetching questions from AI:", e)
+        }
+  }
 
   const handleFlip = (index: number) => {
     setFlipped((prev) => ({ ...prev, [index]: !prev[index] }))
@@ -45,34 +72,56 @@ export function FlashcardDeck() {
   const handleSwipe = (direction: "left" | "right") => {
     setSwipeStates((prev) => ({ ...prev, [currentIndex]: direction }))
 
-    // Move to the next card
     if (currentIndex < flashcards.length - 1) {
       setTimeout(() => {
         setCurrentIndex(currentIndex + 1)
       }, 300)
     } else {
-      // All cards have been swiped
+  
       setTimeout(() => {
-        setCurrentIndex(0)
-        setSwipeStates({})
-        setFlipped({})
-      }, 600)
+        setCurrentIndex(flashcards.length) 
+      }, 300) 
     }
   }
 
-  // Reset function for when all cards are done
   const resetDeck = () => {
     setCurrentIndex(0)
     setSwipeStates({})
     setFlipped({})
   }
 
+  useEffect(() => {
+    showModal()
+  }, [])
+
   return (
     <div className="relative h-[500px] w-full">
+              <Modal title="Choose A Topic : " open={isModalOpen} onOk={handleOk} onCancel={handleCancel}
+              
+              footer={null} 
+              >
+                <form action="">
+                    <input
+                        type="text"
+                        value={topic}
+                        onChange={(e) => setTopic(e.target.value)}
+                        placeholder="Enter a topic"
+                        className="border border-gray-300 rounded-lg p-2 w-full mb-4"
+                 
+                    />
+                    <Button type="primary" onClick={()=>{
+                        getQuestionsFromAI(topic)
+                        setIsModalOpen(false)
+                    }}>
+                        Get Questions
+                    </Button>
+                </form>
+    
+      </Modal>
       <div className="relative h-[400px] w-full">
         {/* Show the current card and the next card for a stacking effect */}
         <AnimatePresence>
-          {[...flashcards].slice(currentIndex, currentIndex + 2).map((card, i) => {
+          {currentIndex < flashcards.length && [...flashcards].slice(currentIndex, currentIndex + 2).map((card, i) => {
             const index = currentIndex + i
             return (
               <Flashcard
@@ -84,6 +133,7 @@ export function FlashcardDeck() {
                 onFlip={() => handleFlip(index)}
                 onSwipe={handleSwipe}
                 zIndex={flashcards.length - i}
+                flashcards={flashcards}
               />
             )
           })}
@@ -97,12 +147,7 @@ export function FlashcardDeck() {
             className="absolute inset-0 flex flex-col items-center justify-center bg-white rounded-xl shadow-xl"
           >
             <p className="text-xl font-medium mb-4">All cards completed!</p>
-            <button
-              onClick={resetDeck}
-              className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors"
-            >
-              Start Over
-            </button>
+            
           </motion.div>
         )}
       </div>
@@ -127,16 +172,17 @@ export function FlashcardDeck() {
 }
 
 interface FlashcardProps {
-  card: (typeof flashcards)[0]
+  card: Flashcard
   index: number
   isTop: boolean
   flipped: boolean
   onFlip: () => void
   onSwipe: (direction: "left" | "right") => void
   zIndex: number
+    flashcards: Flashcard[]
 }
 
-function Flashcard({ card, index, isTop, flipped, onFlip, onSwipe, zIndex }: FlashcardProps) {
+function Flashcard({ card, index, isTop, flipped, onFlip, onSwipe, zIndex, flashcards }: FlashcardProps) {
   const x = useMotionValue(0)
   const rotate = useTransform(x, [-200, 200], [-30, 30])
   const opacity = useTransform(x, [-200, 0, 200], [0.5, 1, 0.5])
